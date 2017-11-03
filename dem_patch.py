@@ -1,5 +1,6 @@
 import arcpy
 import os
+import shutil
 import sys
 
 # ArcGIS Extensions
@@ -13,18 +14,30 @@ else:
 
 
 # inputs
-patch = arcpy.GetParameterAsText(0)
-height_adjustment = arcpy.GetParameterAsText(1)
-dem = arcpy.GetParameterAsText(2)
-out_path = arcpy.GetParameterAsText(3)
+patch = arcpy.GetParameterAsText(0)  # C:\Users\kfisher\Downloads\f_dem\patch.shp
+height_adjustment = arcpy.GetParameterAsText(1)  # C:\Users\kfisher\Downloads\f_dem\height_adj.shp
+height_field = arcpy.GetParameterAsText(2)  # height
+demfile = arcpy.GetParameterAsText(3)  # C:\Users\kfisher\Downloads\f_dem\f_dem.tif
+outfile = arcpy.GetParameterAsText(4)  # C:\Users\kfisher\Downloads\f_dem\output\outdem.tif
 
-# directories
-PROJECT_DIR = r'F:\working_copies\dem_patch'
-TEMP_DIR = os.path.join(PROJECT_DIR, 'temp')
+arcpy.env.overwriteOutput = True
+TEMP_DIR = os.path.join(os.path.dirname(outfile), 'temp')
+if not os.path.exists(TEMP_DIR):
+    os.makedirs(TEMP_DIR)
+
+# clear existing temp files
+for the_file in os.listdir(TEMP_DIR):
+    file_path = os.path.join(TEMP_DIR, the_file)
+    try:
+        if os.path.isfile(file_path):
+            os.unlink(file_path)
+        elif os.path.isdir(file_path):
+            shutil.rmtree(file_path)
+    except Exception as e:
+        print(e)
 
 
 def patch_dem(patch_polygons, height_adj, dem, out_raster):
-
     # get cell size
     dem_result = arcpy.GetRasterProperties_management(dem, "CELLSIZEX")
     cell_size = dem_result.getOutput(0)
@@ -34,9 +47,6 @@ def patch_dem(patch_polygons, height_adj, dem, out_raster):
     arcpy.PolygonToLine_management(patch_polygons,
                                    temp_line,
                                    "IGNORE_NEIGHBORS")
-
-
-
 
     # convert line to raster perimeter
     value_field = "Id"
@@ -62,15 +72,16 @@ def patch_dem(patch_polygons, height_adj, dem, out_raster):
 
     # merge the cells from rasterized perimeter with rasterized polygon for use as mask
     patch_merge = os.path.join(TEMP_DIR, "patch_merge.tif")
-    patch_merge_raster = arcpy.sa.Con(arcpy.sa.IsNull(arcpy.Raster(patch_raster)) == 0, arcpy.Raster(patch_raster), dem_perimeter)
+    patch_merge_raster = arcpy.sa.Con(arcpy.sa.IsNull(arcpy.Raster(patch_raster)) == 0,
+                                      arcpy.Raster(patch_raster),
+                                      dem_perimeter)
     patch_merge_raster.save(patch_merge)
 
     temp_point_dem = os.path.join(TEMP_DIR, "temp_point_dem.shp")
     arcpy.sa.ExtractValuesToPoints(temp_point, dem, temp_point_dem)
 
     # run topo_to_raster using perimeter values from existing dem and height adjustment points
-    value_field = "height"
-    point_elevation = arcpy.sa.TopoPointElevation([[height_adj, value_field], [temp_point_dem, "RASTERVALU"]])
+    point_elevation = arcpy.sa.TopoPointElevation([[height_adj, height_field], [temp_point_dem, "RASTERVALU"]])
     out_ttr = arcpy.sa.TopoToRaster(point_elevation, cell_size=cell_size, data_type='SPOT')
 
     # apply mask
@@ -80,9 +91,9 @@ def patch_dem(patch_polygons, height_adj, dem, out_raster):
     arcpy.env.mask = None
 
 
-arcpy.env.snapRaster = dem
+arcpy.env.snapRaster = demfile
 
 patch_dem(patch_polygons=patch,
           height_adj=height_adjustment,
-          dem=dem,
-          out_raster=out_path)
+          dem=demfile,
+          out_raster=outfile)
