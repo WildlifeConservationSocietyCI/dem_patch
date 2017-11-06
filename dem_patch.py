@@ -80,23 +80,28 @@ def patch_dem(patch_polygons, height_adj, dem, out_raster):
     temp_point_dem = os.path.join(TEMP_DIR, "temp_point_dem.shp")
     arcpy.sa.ExtractValuesToPoints(temp_point, dem, temp_point_dem)
 
-    height_adj_points = [height_adj, height_field]
-    # If height_adj is a contour line, convert to points
-    shape_type = arcpy.Describe(height_adj).shapeType
-    arcpy.AddMessage(shape_type)
-    if shape_type == 'Polyline':
-        # convert contour line to raster perimeter
-        temp_raster_contour = os.path.join(TEMP_DIR, "temp_raster_contour.tif")
-        arcpy.PolylineToRaster_conversion(in_features=height_adj,
-                                          value_field=height_field,
-                                          out_rasterdataset=temp_raster_contour,
-                                          cellsize=cell_size)
-        contour_points = os.path.join(TEMP_DIR, "temp_contour_points.shp")
-        arcpy.RasterToPoint_conversion(temp_raster_contour, contour_points, "VALUE")
-        height_adj_points = [contour_points, "grid_code"]
-
+    elev_points = []
+    if height_adj is not None and height_adj != '':
+        height_adj_points = [height_adj, height_field]
+        # If height_adj is a contour line, convert to points
+        shape_type = arcpy.Describe(height_adj).shapeType
+        arcpy.AddMessage(shape_type)
+        if shape_type == 'Polyline':
+            # convert contour line to raster perimeter
+            temp_raster_contour = os.path.join(TEMP_DIR, "temp_raster_contour.tif")
+            arcpy.PolylineToRaster_conversion(in_features=height_adj,
+                                              value_field=height_field,
+                                              out_rasterdataset=temp_raster_contour,
+                                              cellsize=cell_size)
+            contour_points = os.path.join(TEMP_DIR, "temp_contour_points.shp")
+            arcpy.RasterToPoint_conversion(temp_raster_contour, contour_points, "VALUE")
+            height_adj_points = [contour_points, "grid_code"]
+        elev_points.append(height_adj_points)
+    
+    elev_points.append([temp_point_dem, "RASTERVALU"])
+    
     # run topo_to_raster using perimeter values from existing dem and height adjustment points
-    point_elevation = arcpy.sa.TopoPointElevation([height_adj_points, [temp_point_dem, "RASTERVALU"]])
+    point_elevation = arcpy.sa.TopoPointElevation(elev_points)
     out_ttr = arcpy.sa.TopoToRaster(point_elevation, cell_size=cell_size, data_type='SPOT')
 
     # apply mask
